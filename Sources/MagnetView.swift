@@ -177,6 +177,7 @@ struct MagnetActionSheet: View {
     let magnet: String
     @Environment(\.dismiss) private var dismiss
     @State private var showTorrent = false
+    @State private var showBT = false
     @State private var toast: String?
 
     var body: some View {
@@ -208,8 +209,14 @@ struct MagnetActionSheet: View {
                     } label: {
                         Label("内置在线播放（实验）", systemImage: "play.rectangle")
                     }
+
+                    Button {
+                        showBT = true
+                    } label: {
+                        Label("内置下载到本机", systemImage: "arrow.down.circle")
+                    }
                 } footer: {
-                    Text("iOS 不允许后台跑 BT。要真正下载，装一个 BT 客户端（iTorrent / BitTorrent / qBittorrent），再点「用外部下载器打开」。")
+                    Text("「内置下载」走直连 peer，能拿到数据就会存到 App 的 Downloads 目录并可以直接播放。种子没人做种时会卡在 0%，这时用「用外部下载器打开」更稳。")
                         .font(.caption2)
                 }
             }
@@ -235,6 +242,9 @@ struct MagnetActionSheet: View {
             }
             .fullScreenCover(isPresented: $showTorrent) {
                 TorrentPlayer(magnet: magnet)
+            }
+            .fullScreenCover(isPresented: $showBT) {
+                BTDownloadView(magnetText: magnet)
             }
         }
     }
