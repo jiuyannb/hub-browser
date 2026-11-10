@@ -187,6 +187,11 @@ final class LocalProxy {
         if headers["referer"] == nil {
             req.setValue("https://\(host)/", forHTTPHeaderField: "Referer")
         }
+        if let origin = headers["origin"], origin.contains("127.0.0.1") {
+            req.setValue("https://\(host)", forHTTPHeaderField: "Origin")
+        } else if method != "GET" && headers["origin"] == nil {
+            req.setValue("https://\(host)", forHTTPHeaderField: "Origin")
+        }
 
         let task = session.dataTask(with: req) { [weak self] data, resp, _ in
             guard let self = self else { return }
@@ -232,6 +237,10 @@ final class LocalProxy {
         }
         if let loc = http.value(forHTTPHeaderField: "Location") {
             head += "Location: \(LocalProxy.rewriteLocation(loc, host: host))\r\n"
+        }
+        // Cookie 必须透传，否则 Cloudflare 的 cf_clearance / 站点登录态每次都丢
+        if let cookies = http.value(forHTTPHeaderField: "Set-Cookie") {
+            head += "Set-Cookie: \(LocalProxy.rewriteCookie(cookies))\r\n"
         }
         head += "\r\n"
 
@@ -332,6 +341,16 @@ final class LocalProxy {
         guard var s = String(data: data, encoding: .utf8) else { return data }
         s = rewriteAbsolute(s)
         return Data(s.utf8)
+    }
+
+    /// 去掉 domain/secure/samesite，否则 127.0.0.1 存不下 Cookie
+    static func rewriteCookie(_ v: String) -> String {
+        var s = v
+        s = s.replacingOccurrences(of: #"(?i);\s*domain=[^;]*"#, with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"(?i);\s*secure"#, with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"(?i);\s*samesite=[^;]*"#, with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"(?i);\s*partitioned"#, with: "", options: .regularExpression)
+        return s
     }
 
     static func rewriteLocation(_ loc: String, host: String) -> String {
