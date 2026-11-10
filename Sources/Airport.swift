@@ -28,7 +28,15 @@ struct SubEntry: Identifiable, Hashable, Codable {
 enum SubParser {
 
     static func parse(_ text: String) -> [ProxyNode] {
-        let body = unwrap(text)
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Clash / Clash Meta 配置（机场订阅最常见的格式）
+        if t.contains("proxies:") && t.contains("server:") {
+            let clash = parseClash(t)
+            if !clash.isEmpty { return clash }
+        }
+
+        let body = unwrap(t)
         var out: [ProxyNode] = []
         for line in body.components(separatedBy: .newlines) {
             let s = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -37,6 +45,114 @@ enum SubParser {
             if let n = parseLine(s) { out.append(n) }
         }
         return out
+    }
+
+    // MARK: Clash YAML
+
+    static func parseClash(_ text: String) -> [ProxyNode] {
+        var out: [ProxyNode] = []
+        var cur: [String: String] = [:]
+        var inProxy = false
+
+        func flush() {
+            defer { cur = [:] }
+            guard let server = cur["server"],
+                  let portS = cur["port"],
+                  let port = Int(portS.trimmingCharacters(in: .whitespaces)),
+                  port > 0, !server.isEmpty else { return }
+            let type = (cur["type"] ?? "vmess").lowercased()
+            let name = cur["name"]?.isEmpty == false ? cur["name"]! : server
+            let raw = buildVmessLink(type: type, d: cur) ?? "\(type)://\(server):\(port)#\(name)"
+            out.append(ProxyNode(name: name, type: type, host: server, port: port, raw: raw))
+        }
+
+        for rawLine in text.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty || line.hasPrefix("#") { continue }
+
+            if line.hasPrefix("- {") || line.hasPrefix("-{") {
+                let d = clashFlow(line)
+                if d["server"] != nil {
+                    cur = d
+                    flush()
+                    inProxy = false
+                }
+                continue
+            }
+
+            if line.hasPrefix("- name:") {
+                flush()
+                inProxy = true
+                cur["name"] = unquote(String(line.dropFirst(7)).trimmingCharacters(in: .whitespaces))
+                continue
+            }
+
+            if inProxy, let colon = line.firstIndex(of: ":") {
+                let k = String(line[line.startIndex..<colon]).trimmingCharacters(in: .whitespaces)
+                let v = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+                if k.isEmpty || k.contains(" ") { continue }
+                if !v.hasPrefix("{") {
+                    cur[k] = unquote(v)
+                }
+            }
+
+            if inProxy, line.hasPrefix("- ") && !line.hasPrefix("- name:") {
+                // 新的列表项但不是 name 开头，忽略
+            }
+        }
+        flush()
+        return out
+    }
+
+    static func clashFlow(_ line: String) -> [String: String] {
+        var d: [String: String] = [:]
+        let keys = ["name", "type", "server", "port", "uuid", "password", "cipher", "sni", "servername", "network"]
+        for k in keys {
+            if let v = regexValue(line, k) { d[k] = v }
+        }
+        if let h = regexValue(line, "Host") { d["Host"] = h }
+        if let p = regexValue(line, "path") { d["path"] = p }
+        return d
+    }
+
+    static func regexValue(_ s: String, _ key: String) -> String? {
+        let pat = "(?:^|[\\s,{])" + NSRegularExpression.escapedPattern(for: key) + ":\\s*'?([^',}\\n]+)'?"
+        guard let re = try? NSRegularExpression(pattern: pat) else { return nil }
+        let ns = s as NSString
+        guard let m = re.firstMatch(in: s, range: NSRange(location: 0, length: ns.length)),
+              m.numberOfRanges >= 2 else { return nil }
+        let v = ns.substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespaces)
+        return v.isEmpty ? nil : v
+    }
+
+    static func unquote(_ s: String) -> String {
+        var v = s.trimmingCharacters(in: .whitespaces)
+        if (v.hasPrefix("'") && v.hasSuffix("'")) || (v.hasPrefix("\"") && v.hasSuffix("\"")) {
+            v = String(v.dropFirst().dropLast())
+        }
+        return v
+    }
+
+    /// 把 Clash 节点还原成标准 vmess:// 链接（base64 JSON），方便分享/导入
+    static func buildVmessLink(type: String, d: [String: String]) -> String? {
+        guard type == "vmess", let add = d["server"], let port = d["port"], let id = d["uuid"] else { return nil }
+        let obj: [String: Any] = [
+            "v": "2",
+            "ps": d["name"] ?? add,
+            "add": add,
+            "port": port,
+            "id": id,
+            "aid": d["alterId"] ?? "0",
+            "scy": d["cipher"] ?? "auto",
+            "net": d["network"] ?? "tcp",
+            "type": "none",
+            "host": d["Host"] ?? "",
+            "path": d["path"] ?? "",
+            "tls": d["tls"] ?? "",
+            "sni": d["servername"] ?? ""
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: obj) else { return nil }
+        return "vmess://" + data.base64EncodedString()
     }
 
     static func unwrap(_ text: String) -> String {
