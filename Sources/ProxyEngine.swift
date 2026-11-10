@@ -157,11 +157,8 @@ final class ProxyEngine: ObservableObject {
             return
         }
 
-        SwiftyXray.setMemoryLimitMB(140)
         do {
-            try SwiftyXray.run(dataDir: dataDir.path, configPath: configURL.path) { [weak self] line in
-                DispatchQueue.main.async { self?.logLine = line }
-            }
+            try SwiftyXray.run(dataDir: dataDir.path, configPath: configURL.path)
         } catch {
             state = .failed("Xray 启动失败：\(error.localizedDescription)")
             completion(false, "Xray 启动失败：\(error.localizedDescription)")
