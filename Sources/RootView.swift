@@ -21,6 +21,9 @@ struct RootView: View {
             MagnetView(store: store)
                 .tabItem { Label("磁力", systemImage: "link") }
 
+            AirportView()
+                .tabItem { Label("机场", systemImage: "airplane") }
+
             bookmarksTab
                 .tabItem { Label("收藏", systemImage: "bookmark.fill") }
 
