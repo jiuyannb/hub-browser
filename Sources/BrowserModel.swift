@@ -248,6 +248,40 @@ extension BrowserModel: WKNavigationDelegate {
         detectWall()
     }
 
+    // MARK: 抓直链交给原生播放器
+
+    func extractMedia(completion: @escaping (String?) -> Void) {
+        let js = """
+        (function(){
+          try{
+            var v = document.querySelector('video');
+            if(v && v.src && /(m3u8|mp4|flv)/i.test(v.src)) return v.src;
+            if(v){
+              var ss = v.querySelectorAll('source');
+              for(var i=0;i<ss.length;i++){ if(ss[i].src) return ss[i].src; }
+            }
+            var h = document.documentElement.innerHTML;
+            var m = h.match(/[^"'\\\\\\s]+\\.m3u8[^"'\\\\\\s]*/);
+            if(m) return m[0];
+            m = h.match(/[^"'\\\\\\s]+\\.mp4[^"'\\\\\\s]*/);
+            if(m) return m[0];
+          }catch(e){}
+          return '';
+        })();
+        """
+        webView.evaluateJavaScript(js) { value, _ in
+            var s = (value as? String) ?? ""
+            guard !s.isEmpty else { completion(nil); return }
+            if s.hasPrefix("//") { s = "https:" + s }
+            if s.hasPrefix("/") {
+                let port = ProxyEngine.shared.webPort
+                if port > 0 { s = "http://127.0.0.1:\(port)" + s }
+            }
+            let decoded = s.replacingOccurrences(of: "\\/", with: "/")
+            completion(decoded)
+        }
+    }
+
     private func detectWall() {
         let js = """
         (function(){
