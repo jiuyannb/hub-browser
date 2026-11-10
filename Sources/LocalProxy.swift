@@ -1,8 +1,7 @@
-import Foundation
+﻿import Foundation
 import Network
 
-// MARK: - 信任所有证书
-
+// MARK: - 淇′换鎵€鏈夎瘉涔?
 final class ProxyTrust: NSObject, URLSessionDelegate {
     func urlSession(_ session: URLSession,
                     didReceive challenge: URLAuthenticationChallenge,
@@ -15,7 +14,7 @@ final class ProxyTrust: NSObject, URLSessionDelegate {
     }
 }
 
-// MARK: - 本地 HTTP 反代：WKWebView → 127.0.0.1 → Xray http inbound → 机场节点
+// MARK: - 鏈湴 HTTP 鍙嶄唬锛歐KWebView 鈫?127.0.0.1 鈫?Xray http inbound 鈫?鏈哄満鑺傜偣
 
 final class LocalProxy {
     private var listener: NWListener?
@@ -48,7 +47,7 @@ final class LocalProxy {
         self.session = URLSession(configuration: cfg, delegate: ProxyTrust(), delegateQueue: nil)
     }
 
-    // MARK: 生命周期
+    // MARK: 鐢熷懡鍛ㄦ湡
 
     func start(completion: @escaping (Bool) -> Void) {
         do {
@@ -83,7 +82,7 @@ final class LocalProxy {
         port = nil
     }
 
-    // MARK: 收包
+    // MARK: 鏀跺寘
 
     private func accept(_ conn: NWConnection) {
         conn.stateUpdateHandler = { state in
@@ -119,7 +118,7 @@ final class LocalProxy {
         }
     }
 
-    // MARK: 路由
+    // MARK: 璺敱
 
     private func route(_ conn: NWConnection, head: Data, body: Data) {
         guard let text = String(data: head, encoding: .utf8) else {
@@ -195,14 +194,14 @@ final class LocalProxy {
 
         let task = session.dataTask(with: req) { [weak self] data, resp, _ in
             guard let self = self else { return }
-            self.finish(conn, method: method, host: host, data: data, response: resp)
+            self.finish(conn, method: method, host: host, path: pathQuery, data: data, response: resp)
         }
         task.resume()
     }
 
-    // MARK: 回写
+    // MARK: 鍥炲啓
 
-    private func finish(_ conn: NWConnection, method: String, host: String, data: Data?, response: URLResponse?) {
+    private func finish(_ conn: NWConnection, method: String, host: String, path: String, data: Data?, response: URLResponse?) {
         guard let http = response as? HTTPURLResponse else {
             reply(conn, status: 502, text: "upstream failed")
             return
@@ -214,7 +213,7 @@ final class LocalProxy {
         if ctype.lowercased().contains("text/html") {
             payload = LocalProxy.rewriteHTML(payload, host: host)
         } else if ctype.lowercased().contains("mpegurl") || ctype.lowercased().contains("vnd.apple") {
-            payload = LocalProxy.rewritePlaylist(payload)
+            payload = LocalProxy.rewritePlaylist(payload, host: host, basePath: path)
         }
 
         var head = "HTTP/1.1 \(http.statusCode) \(HTTPURLResponse.localizedString(forStatusCode: http.statusCode))\r\n"
@@ -238,8 +237,7 @@ final class LocalProxy {
         if let loc = http.value(forHTTPHeaderField: "Location") {
             head += "Location: \(LocalProxy.rewriteLocation(loc, host: host))\r\n"
         }
-        // Cookie 必须透传，否则 Cloudflare 的 cf_clearance / 站点登录态每次都丢
-        if let cookies = http.value(forHTTPHeaderField: "Set-Cookie") {
+        // Cookie 蹇呴』閫忎紶锛屽惁鍒?Cloudflare 鐨?cf_clearance / 绔欑偣鐧诲綍鎬佹瘡娆￠兘涓?        if let cookies = http.value(forHTTPHeaderField: "Set-Cookie") {
             head += "Set-Cookie: \(LocalProxy.rewriteCookie(cookies))\r\n"
         }
         head += "\r\n"
@@ -261,7 +259,7 @@ final class LocalProxy {
         conn.send(content: out, completion: .contentProcessed { _ in conn.cancel() })
     }
 
-    // MARK: 内容改写
+    // MARK: 鍐呭鏀瑰啓
 
     private static let absPattern = #"https?://([a-zA-Z0-9.\-]+(?::[0-9]+)?)(/[^"'\s\\)<>]*)?"#
 
@@ -285,20 +283,19 @@ final class LocalProxy {
         guard var s = String(data: data, encoding: .utf8) else { return data }
         s = rewriteAbsolute(s)
 
-        // 1) 干掉 page 自带 CSP（会拦 127.0.0.1 的资源）
+        // 1) 骞叉帀 page 鑷甫 CSP锛堜細鎷?127.0.0.1 鐨勮祫婧愶級
         s = s.replacingOccurrences(
             of: #"<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]*>"#,
             with: "", options: [.regularExpression, .caseInsensitive])
 
-        // 2) 去掉 integrity(SRI) 与 crossorigin —— 改写后 hash 不再匹配，脚本会被整块拒绝
-        s = s.replacingOccurrences(
+        // 2) 鍘绘帀 integrity(SRI) 涓?crossorigin 鈥斺€?鏀瑰啓鍚?hash 涓嶅啀鍖归厤锛岃剼鏈細琚暣鍧楁嫆缁?        s = s.replacingOccurrences(
             of: #"\s+integrity=("[^"]*"|'[^']*')"#,
             with: "", options: .regularExpression)
         s = s.replacingOccurrences(
             of: #"\s+crossorigin(="[^"]*"|='[^']*')?"#,
             with: "", options: .regularExpression)
 
-        // 3) base 必须带上当前 host，否则相对路径资源全落到根 → CSS/图片全 404
+        // 3) base 蹇呴』甯︿笂褰撳墠 host锛屽惁鍒欑浉瀵硅矾寰勮祫婧愬叏钀藉埌鏍?鈫?CSS/鍥剧墖鍏?404
         let base = "<base href=\"/__x/\(host)/\">"
         if let h = s.range(of: "<head", options: .caseInsensitive),
            let gt = s[h.lowerBound...].firstIndex(of: ">") {
@@ -307,8 +304,7 @@ final class LocalProxy {
             s = base + s
         }
 
-        // 4) 站内协议相对链接 //cdn.xxx → 也转走
-        if let re = try? NSRegularExpression(pattern: #"(?<=["'\(])//([a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})(/[^"'\s]*)"#) {
+        // 4) 绔欏唴鍗忚鐩稿閾炬帴 //cdn.xxx 鈫?涔熻浆璧?        if let re = try? NSRegularExpression(pattern: #"(?<=["'\(])//([a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})(/[^"'\s]*)"#) {
             let ns = s as NSString
             let ms = re.matches(in: s, range: NSRange(location: 0, length: ns.length))
             var out = s
@@ -321,7 +317,7 @@ final class LocalProxy {
             s = out
         }
 
-        // 5) JS 里被转义的 https:\/\/host\/path
+        // 5) JS 閲岃杞箟鐨?https:\/\/host\/path
         if let re = try? NSRegularExpression(pattern: #"https?:\\/\\/([a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})"#) {
             let ns = s as NSString
             let ms = re.matches(in: s, range: NSRange(location: 0, length: ns.length))
@@ -337,13 +333,47 @@ final class LocalProxy {
         return Data(s.utf8)
     }
 
-    static func rewritePlaylist(_ data: Data) -> Data {
+    static func rewritePlaylist(_ data: Data, host: String, basePath: String) -> Data {
         guard var s = String(data: data, encoding: .utf8) else { return data }
         s = rewriteAbsolute(s)
-        return Data(s.utf8)
+
+        // m3u8 閲岀殑鍒嗙墖甯告槸鐩稿璺緞锛坰eg-1.ts / ../a/b.ts锛夛紝蹇呴』琛ユ垚 /__x/<host>/<dir>/...
+        var dir = basePath
+        if let q = dir.firstIndex(of: "?") { dir = String(dir[..<q]) }
+        if let slash = dir.lastIndex(of: "/") { dir = String(dir[..<slash]) } else { dir = "" }
+        if dir.isEmpty { dir = "/" }
+
+        var outLines: [String] = []
+        for line in s.components(separatedBy: "\n") {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if t.isEmpty || t.hasPrefix("#") || t.hasPrefix("/") || t.hasPrefix("http") {
+                outLines.append(line)
+                continue
+            }
+            var clean = t
+            var suffix = ""
+            if let h = clean.firstIndex(of: "#") {
+                suffix = String(clean[h...])
+                clean = String(clean[..<h])
+            }
+            let joined = LocalProxy.normalize(dir + "/" + clean)
+            outLines.append("/__x/\(host)\(joined)\(suffix)")
+        }
+        return Data(outLines.joined(separator: "\n").utf8)
     }
 
-    /// 去掉 domain/secure/samesite，否则 127.0.0.1 存不下 Cookie
+    /// 鎶樺彔 ../ 涓?//
+    static func normalize(_ p: String) -> String {
+        var parts: [String] = []
+        for seg in p.components(separatedBy: "/") {
+            if seg.isEmpty || seg == "." { continue }
+            if seg == ".." { if !parts.isEmpty { parts.removeLast() }; continue }
+            parts.append(seg)
+        }
+        return "/" + parts.joined(separator: "/")
+    }
+
+    /// 鍘绘帀 domain/secure/samesite锛屽惁鍒?127.0.0.1 瀛樹笉涓?Cookie
     static func rewriteCookie(_ v: String) -> String {
         var s = v
         s = s.replacingOccurrences(of: #"(?i);\s*domain=[^;]*"#, with: "", options: .regularExpression)
