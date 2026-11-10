@@ -84,6 +84,17 @@ enum Prefs {
             UserDefaults.standard.set(data, forKey: key)
         }
     }
+
+    static func saveSingle<T: Codable>(_ key: String, _ value: T) {
+        if let data = try? JSONEncoder().encode(value) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+
+    static func loadSingle<T: Codable>(_ type: T.Type, _ key: String) -> T? {
+        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        return try? JSONDecoder().decode(T.self, from: data)
+    }
 }
 
 // MARK: - 内置站点清单（要增删改，只动这里）
