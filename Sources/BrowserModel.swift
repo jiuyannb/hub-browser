@@ -10,6 +10,8 @@ final class BrowserModel: NSObject, ObservableObject {
     @Published var canForward = false
     @Published var playing: PlayItem?
     @Published var siteName = ""
+    @Published var walled = false     // 命中 Cloudflare 验证墙，需要系统代理
+    @Published var walledURL = ""
 
     let webView: WKWebView
     var onLoaded: ((String, String) -> Void)?
@@ -243,6 +245,34 @@ extension BrowserModel: WKNavigationDelegate {
         let url = webView.url?.absoluteString ?? ""
         let title = webView.title ?? url
         onLoaded?(title, url)
+        detectWall()
+    }
+
+    private func detectWall() {
+        let js = """
+        (function(){
+          try{
+            var t = (document.title || '');
+            var b = document.body ? (document.body.innerText || '').slice(0, 1500) : '';
+            var k = t + ' ' + b;
+            if(/Just a moment|Checking your browser|Security check|安全验证|正在验证|请稍候|Attention Required|cf-browser-verification/i.test(k)){
+              return '1';
+            }
+            if(document.querySelector('#challenge-form, #cf-challenge-running, .cf-browser-verification')) return '1';
+          }catch(e){}
+          return '';
+        })();
+        """
+        webView.evaluateJavaScript(js) { [weak self] value, _ in
+            guard let self = self else { return }
+            let hit = (value as? String) == "1"
+            DispatchQueue.main.async {
+                if hit != self.walled {
+                    self.walled = hit
+                    self.walledURL = hit ? (self.webView.url?.absoluteString ?? "") : ""
+                }
+            }
+        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {}
