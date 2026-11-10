@@ -98,8 +98,6 @@ extension Site {
              searchTemplate: "https://www.xvideos.com/?k={q}", icon: "play.rectangle.fill"),
         Site(name: "XNXX", url: "https://www.xnxx.com", category: "视频",
              searchTemplate: "https://www.xnxx.com/search/{q}", icon: "play.rectangle.fill"),
-        Site(name: "Hanime", url: "https://hanime.tv", category: "视频",
-             searchTemplate: "https://hanime.tv/search?q={q}", icon: "sparkles.tv.fill"),
         Site(name: "MissAV", url: "https://missav.com", category: "视频",
              searchTemplate: "https://missav.com/search/{q}", icon: "film.fill"),
         Site(name: "Jable", url: "https://jable.tv", category: "视频",
@@ -116,6 +114,22 @@ extension Site {
              searchTemplate: "https://www.eporner.com/search/{q}/", icon: "play.rectangle.fill"),
         Site(name: "91Porn", url: "https://91porn.com", category: "视频",
              searchTemplate: nil, icon: "video.fill"),
+
+        // ── 里番 ──
+        Site(name: "Hanime", url: "https://hanime.tv", category: "里番",
+             searchTemplate: "https://hanime.tv/search?q={q}", icon: "sparkles.tv.fill"),
+        Site(name: "Hanime1 中文", url: "https://hanime1.me", category: "里番",
+             searchTemplate: "https://hanime1.me/search?query={q}", icon: "sparkles.tv.fill"),
+        Site(name: "Ohentai 中字", url: "https://ohentai.org", category: "里番",
+             searchTemplate: "https://ohentai.org/search.php?keyword={q}", icon: "sparkles.tv.fill"),
+        Site(name: "HentaiHaven", url: "https://hentaihaven.xxx", category: "里番",
+             searchTemplate: "https://hentaihaven.xxx/?s={q}", icon: "sparkles.tv.fill"),
+        Site(name: "AnimeID 里番", url: "https://animeidhentai.com", category: "里番",
+             searchTemplate: "https://animeidhentai.com/?s={q}", icon: "sparkles.tv.fill"),
+        Site(name: "HentaiMama", url: "https://hentaimama.io", category: "里番",
+             searchTemplate: "https://hentaimama.io/?s={q}", icon: "sparkles.tv.fill"),
+        Site(name: "Hentai.tv", url: "https://hentai.tv", category: "里番",
+             searchTemplate: "https://hentai.tv/?s={q}", icon: "sparkles.tv.fill"),
 
         // ── 漫画 ──
         Site(name: "禁漫天堂", url: "https://18comic.vip", category: "漫画",
