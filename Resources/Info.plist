@@ -33,6 +33,13 @@
 		<string>vlc</string>
 		<string>infuse</string>
 		<string>nplayer</string>
+		<string>shadowrocket</string>
+		<string>quantumult-x</string>
+		<string>clash</string>
+		<string>stash</string>
+		<string>surge</string>
+		<string>loon</string>
+		<string>sing-box</string>
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
