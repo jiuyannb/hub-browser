@@ -84,18 +84,57 @@ enum SubParser {
 
     static func vmess(_ s: String) -> ProxyNode? {
         guard let r = s.range(of: "://") else { return nil }
-        var b = String(s[r.upperBound...])
-        if let h = b.firstIndex(of: "#") { b = String(b[b.startIndex..<h]) }
+        var body = String(s[r.upperBound...])
+        if let h = body.firstIndex(of: "#") { body = String(body[body.startIndex..<h]) }
+
+        // query 段不属于 base64，先剥离（形如 ?path=/&remarks=xxx&obfs=websocket）
+        var query = ""
+        if let q = body.firstIndex(of: "?") {
+            query = String(body[body.index(after: q)...])
+            body = String(body[body.startIndex..<q])
+        }
+
+        var b = body
         while b.count % 4 != 0 { b.append("=") }
         guard let d = Data(base64Encoded: b) else { return nil }
-        guard let obj = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else { return nil }
-        let name = (obj["ps"] as? String) ?? "vmess"
-        let host = (obj["add"] as? String) ?? ""
-        var port = 0
-        if let pi = obj["port"] as? Int { port = pi }
-        else if let ps = obj["port"] as? String { port = Int(ps) ?? 0 }
-        guard !host.isEmpty, port > 0 else { return nil }
-        return ProxyNode(name: name, type: "vmess", host: host, port: port, raw: s)
+        let decoded = String(data: d, encoding: .utf8) ?? ""
+
+        let f = frag(s)
+        let fallbackName = f.isEmpty ? (queryValue(query, "remarks") ?? "") : f
+
+        // A) 标准 v2rayN：base64({"v":"2","ps":...,"add":...,"port":...})
+        if decoded.contains("{"),
+           let obj = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] {
+            let ps = (obj["ps"] as? String) ?? ""
+            let name = ps.isEmpty ? fallbackName : ps
+            let host = (obj["add"] as? String) ?? ""
+            var port = 0
+            if let pi = obj["port"] as? Int { port = pi }
+            else if let ps2 = obj["port"] as? String { port = Int(ps2) ?? 0 }
+            if !host.isEmpty, port > 0 {
+                return ProxyNode(name: name.isEmpty ? host : name, type: "vmess", host: host, port: port, raw: s)
+            }
+        }
+
+        // B) SIP002 变体：base64("auto:uuid@host:port")
+        if let at = decoded.lastIndex(of: "@") {
+            var hp = String(decoded[decoded.index(after: at)...])
+            if let q = hp.firstIndex(of: "?") { hp = String(hp[hp.startIndex..<q]) }
+            if let (h, p) = hostPort(hp) {
+                return ProxyNode(name: fallbackName.isEmpty ? h : fallbackName, type: "vmess", host: h, port: p, raw: s)
+            }
+        }
+        return nil
+    }
+
+    static func queryValue(_ q: String, _ key: String) -> String? {
+        for pair in q.split(separator: "&") {
+            let kv = pair.split(separator: "=", maxSplits: 1)
+            if kv.count == 2, String(kv[0]) == key {
+                return String(kv[1]).removingPercentEncoding
+            }
+        }
+        return nil
     }
 
     static func shadowsocks(_ s: String) -> ProxyNode? {
@@ -152,6 +191,32 @@ enum SubParser {
         let parts = r.split(separator: ":")
         guard parts.count >= 2, let p = Int(parts[1]) else { return nil }
         return (String(parts[0]), p)
+    }
+}
+
+// MARK: - 允许自签证书的会话（机场订阅常是 IP + 自签 HTTPS）
+
+final class TrustAllSession: NSObject, URLSessionDelegate {
+
+    static let shared = TrustAllSession()
+
+    lazy var session: URLSession = {
+        let cfg = URLSessionConfiguration.default
+        cfg.timeoutIntervalForRequest = 20
+        cfg.timeoutIntervalForResource = 30
+        cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
+    }()
+
+    func urlSession(_ session: URLSession,
+                    didReceive challenge: URLAuthenticationChallenge,
+                    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+           let trust = challenge.protectionSpace.serverTrust {
+            completionHandler(.useCredential, URLCredential(trust: trust))
+        } else {
+            completionHandler(.performDefaultHandling, nil)
+        }
     }
 }
 
