@@ -125,6 +125,60 @@ final class BrowserModel: NSObject, ObservableObject {
                                  injectionTime: .atDocumentEnd,
                                  forMainFrameOnly: false)
         webView.configuration.userContentController.addUserScript(script)
+
+        // 反代模式下，把页面内 JS 的绝对 URL 请求也转成 /__x/<host>/<path>
+        let proxyJS = """
+        (function(){
+          try{
+            var h = location.hostname;
+            if(h !== '127.0.0.1' && h !== 'localhost'){ return; }
+            function map(u){
+              try{
+                var s = String(u);
+                if(/^https?:\\/\\//i.test(s) && s.indexOf('127.0.0.1') < 0){
+                  var m = s.match(/^https?:\\/\\/([^\\/]+)(\\/[^#]*)?/i);
+                  if(m){ return location.origin + '/__x/' + m[1] + (m[2] || '/'); }
+                }
+              }catch(e){}
+              return u;
+            }
+            var of = window.fetch;
+            if(of){
+              window.fetch = function(input, init){
+                try{
+                  if(typeof input === 'string'){ input = map(input); }
+                  else if(input && input.url){ input = new Request(map(input.url), input); }
+                }catch(e){}
+                return of.call(this, input, init);
+              };
+            }
+            var oo = XMLHttpRequest.prototype.open;
+            XMLHttpRequest.prototype.open = function(){
+              var a = Array.prototype.slice.call(arguments);
+              if(a.length > 1){ a[1] = map(a[1]); }
+              return oo.apply(this, a);
+            };
+            var oimg = window.Image;
+            var ws = window.WebSocket;
+            if(ws){
+              window.WebSocket = function(u, p){
+                try{
+                  var s = String(u);
+                  if(/^wss?:\\/\\//i.test(s) && s.indexOf('127.0.0.1') < 0){
+                    var m = s.match(/^wss?:\\/\\/([^\\/]+)(\\/[^#]*)?/i);
+                    if(m){ u = 'ws://' + location.host + '/__ws/' + m[1] + (m[2] || '/'); }
+                  }
+                }catch(e){}
+                return p ? new ws(u, p) : new ws(u);
+              };
+            }
+          }catch(e){}
+        })();
+        """
+        let proxyScript = WKUserScript(source: proxyJS,
+                                       injectionTime: .atDocumentStart,
+                                       forMainFrameOnly: false)
+        webView.configuration.userContentController.addUserScript(proxyScript)
     }
 
     private func installRules() {
