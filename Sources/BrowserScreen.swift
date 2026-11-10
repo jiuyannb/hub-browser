@@ -76,6 +76,23 @@ struct BrowserScreen: View {
         }
     }
 
+    private func grabAndPlay() {
+        model.extractMedia { raw in
+            DispatchQueue.main.async {
+                if let raw = raw, let url = URL(string: raw) {
+                    model.playing = PlayItem(url: url)
+                } else {
+                    playViaAPI()
+                }
+            }
+        }
+    }
+
+    /// 页面里抓不到直链时，退回站点 API 拿 m3u8
+    private func playViaAPI() {
+        model.reload()
+    }
+
     private var wallBanner: some View {
         HStack(spacing: 10) {
             Image(systemName: "shield.lefthalf.filled")
@@ -128,6 +145,12 @@ struct BrowserScreen: View {
             }
 
             Spacer()
+
+            Button {
+                grabAndPlay()
+            } label: {
+                Image(systemName: "play.rectangle").font(.system(size: 17, weight: .semibold))
+            }
 
             Button {
                 store.addBookmark(Bookmark(title: model.pageTitle.isEmpty ? model.address : model.pageTitle,
