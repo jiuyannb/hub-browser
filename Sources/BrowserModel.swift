@@ -112,9 +112,13 @@ final class BrowserModel: NSObject, ObservableObject {
             var kill = function(){
               document.querySelectorAll('div,section,aside').forEach(function(el){
                 var s = getComputedStyle(el);
-                if(s.position === 'fixed' && parseInt(s.zIndex || '0', 10) > 99 && el.offsetHeight > 200 && el.offsetWidth > 200){
-                  el.style.display = 'none';
-                }
+                if(s.position !== 'fixed' || parseInt(s.zIndex || '0', 10) <= 99) return;
+                if(el.offsetHeight < 200 || el.offsetWidth < 200) return;
+                // 保命：容器里有播放器/正文就别动，否则页面会塌
+                if(el.querySelector('video,main,article,form')) return;
+                var full = el.offsetHeight >= window.innerHeight * 0.9 && el.offsetWidth >= window.innerWidth * 0.9;
+                if(full){ el.style.display = 'none'; }
+                else { el.style.pointerEvents = 'none'; }
               });
             };
             setTimeout(kill, 1500);
