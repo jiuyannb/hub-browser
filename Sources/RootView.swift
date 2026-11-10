@@ -121,6 +121,8 @@ struct RootView: View {
     private var settingsTab: some View {
         NavigationStack {
             List {
+                ProxySection()
+
                 Section("浏览") {
                     Toggle("无痕模式", isOn: Binding(
                         get: { store.incognito },
@@ -224,6 +226,129 @@ struct DownloadListView: View {
                     Text("在播放页右上角菜单里点「下载到本地」")
                         .font(.caption).foregroundStyle(.tertiary)
                 }
+            }
+        }
+    }
+}
+
+// MARK: - 内置代理
+
+struct ProxySection: View {
+    @ObservedObject var engine = ProxyEngine.shared
+    @State private var nodes: [ProxyNode] = []
+    @State private var picking = false
+    @State private var message = ""
+
+    private var statusText: String {
+        switch engine.state {
+        case .idle: return "未连接（走系统网络）"
+        case .starting: return "启动中…"
+        case .running: return "已连接 " + engine.activeName
+        case .failed(let m): return "失败：" + m
+        }
+    }
+
+    private var statusColor: Color {
+        switch engine.state {
+        case .running: return .green
+        case .failed: return .red
+        case .starting: return .orange
+        case .idle: return .secondary
+        }
+    }
+
+    var body: some View {
+        Section {
+            HStack {
+                Text("状态")
+                Spacer()
+                Text(statusText)
+                    .foregroundStyle(statusColor)
+                    .multilineTextAlignment(.trailing)
+                    .font(.footnote)
+            }
+
+            if engine.isRunning {
+                Button("断开内置代理", role: .destructive) {
+                    engine.stop()
+                    message = ""
+                }
+            } else {
+                Button("选择节点并连接") {
+                    picking = true
+                }
+                .disabled(nodes.isEmpty)
+            }
+
+            if let n = Prefs.loadSingle(ProxyNode.self, "proxyNode"), !engine.isRunning {
+                HStack {
+                    Text("上次")
+                    Spacer()
+                    Text(n.name).foregroundStyle(.secondary).font(.footnote)
+                }
+                Button("一键重连「\(n.name)」") {
+                    connect(n)
+                }
+            }
+
+            if !message.isEmpty {
+                Text(message).font(.caption).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("内置代理（不用开 VPN 就能上网）")
+        } footer: {
+            Text(nodes.isEmpty
+                 ? "先去「机场」Tab 添加订阅，这里才有节点可选。只支持 vmess 节点（ws / tcp 均可）。"
+                 : "连接后 App 内网页走你选的节点出网，不影响系统网络。Xray 内核 \(engine.xrayInfo)")
+                .font(.caption2)
+        }
+        .onAppear {
+            nodes = Prefs.load([ProxyNode].self, "subNodes") ?? []
+        }
+        .sheet(isPresented: $picking) {
+            NavigationStack {
+                List {
+                    ForEach(nodes.filter { $0.raw.lowercased().hasPrefix("vmess://") }) { node in
+                        Button {
+                            picking = false
+                            connect(node)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(node.name).foregroundStyle(.primary)
+                                Text(node.host + ":" + String(node.port))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("选择节点")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("取消") { picking = false }
+                    }
+                }
+                .overlay {
+                    let list = nodes.filter { $0.raw.lowercased().hasPrefix("vmess://") }
+                    if list.isEmpty {
+                        VStack(spacing: 10) {
+                            Image(systemName: "airplane.circle").font(.largeTitle).foregroundStyle(.secondary)
+                            Text("没有可用的 vmess 节点").foregroundStyle(.secondary)
+                            Text("机场 Tab 里重新拉一次订阅").font(.caption).foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func connect(_ node: ProxyNode) {
+        message = "连接中…"
+        engine.start(node: node) { ok, msg in
+            message = msg
+            if !ok {
+                nodes = Prefs.load([ProxyNode].self, "subNodes") ?? []
             }
         }
     }
