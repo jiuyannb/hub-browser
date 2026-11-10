@@ -158,6 +158,21 @@ struct AirportView: View {
         let t = subURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { msg = "先粘贴订阅或节点链接"; return }
 
+        // 直接粘 Clash / Clash Meta 配置文本
+        if t.contains("proxies:") && t.contains("server:") {
+            let ns = SubParser.parse(t)
+            if ns.isEmpty {
+                msg = "识别到 Clash 配置，但没解出节点"
+            } else {
+                nodes = ns
+                write(nodes, "subNodes")
+                subURL = ""
+                subName = ""
+                msg = "从配置文本解析出 \(ns.count) 个节点"
+            }
+            return
+        }
+
         // 直接粘单个节点链接（vmess:// vless:// trojan:// ss:// hysteria2:// tuic://）
         let nodeSchemes = ["vmess://", "vless://", "trojan://", "ss://", "hysteria2://", "hy2://", "hysteria://", "tuic://", "socks://", "socks5://"]
         if nodeSchemes.contains(where: { t.contains($0) }) && !t.hasPrefix("http") {
