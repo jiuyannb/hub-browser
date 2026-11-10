@@ -201,7 +201,7 @@ final class ProxyEngine: ObservableObject {
             guard let self = self else { return }
             if ok, let port = lp.port {
                 self.webPort = port
-                completion(URL(string: "http://127.0.0.1:\(port)/"))
+                completion(URL(string: "http://127.0.0.1:\(port)/__x/\(host)/"))
             } else {
                 completion(nil)
             }
