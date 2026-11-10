@@ -216,7 +216,20 @@ final class LocalProxy {
         head += "Content-Type: \(ctype)\r\n"
         head += "Content-Length: \(payload.count)\r\n"
         head += "Access-Control-Allow-Origin: *\r\n"
+        head += "Accept-Ranges: bytes\r\n"
         head += "Connection: close\r\n"
+        if let v = http.value(forHTTPHeaderField: "Content-Range") {
+            head += "Content-Range: \(v)\r\n"
+        }
+        if let v = http.value(forHTTPHeaderField: "Cache-Control") {
+            head += "Cache-Control: \(v)\r\n"
+        }
+        if let v = http.value(forHTTPHeaderField: "ETag") {
+            head += "ETag: \(v)\r\n"
+        }
+        if let v = http.value(forHTTPHeaderField: "Last-Modified") {
+            head += "Last-Modified: \(v)\r\n"
+        }
         if let loc = http.value(forHTTPHeaderField: "Location") {
             head += "Location: \(LocalProxy.rewriteLocation(loc, host: host))\r\n"
         }
@@ -263,13 +276,29 @@ final class LocalProxy {
         guard var s = String(data: data, encoding: .utf8) else { return data }
         s = rewriteAbsolute(s)
 
-        let base = "<base href=\"/\">"
+        // 1) 干掉 page 自带 CSP（会拦 127.0.0.1 的资源）
+        s = s.replacingOccurrences(
+            of: #"<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]*>"#,
+            with: "", options: [.regularExpression, .caseInsensitive])
+
+        // 2) 去掉 integrity(SRI) 与 crossorigin —— 改写后 hash 不再匹配，脚本会被整块拒绝
+        s = s.replacingOccurrences(
+            of: #"\s+integrity=("[^"]*"|'[^']*')"#,
+            with: "", options: .regularExpression)
+        s = s.replacingOccurrences(
+            of: #"\s+crossorigin(="[^"]*"|='[^']*')?"#,
+            with: "", options: .regularExpression)
+
+        // 3) base 必须带上当前 host，否则相对路径资源全落到根 → CSS/图片全 404
+        let base = "<base href=\"/__x/\(host)/\">"
         if let h = s.range(of: "<head", options: .caseInsensitive),
            let gt = s[h.lowerBound...].firstIndex(of: ">") {
             s.insert(contentsOf: base, at: s.index(after: gt))
+        } else {
+            s = base + s
         }
 
-        // 站内相对协议链接 //cdn.xxx → 也转走
+        // 4) 站内协议相对链接 //cdn.xxx → 也转走
         if let re = try? NSRegularExpression(pattern: #"(?<=["'\(])//([a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})(/[^"'\s]*)"#) {
             let ns = s as NSString
             let ms = re.matches(in: s, range: NSRange(location: 0, length: ns.length))
@@ -282,6 +311,20 @@ final class LocalProxy {
             }
             s = out
         }
+
+        // 5) JS 里被转义的 https:\/\/host\/path
+        if let re = try? NSRegularExpression(pattern: #"https?:\\/\\/([a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})"#) {
+            let ns = s as NSString
+            let ms = re.matches(in: s, range: NSRange(location: 0, length: ns.length))
+            var out = s
+            for m in ms.reversed() {
+                guard let full = Range(m.range, in: out) else { continue }
+                let h = ns.substring(with: m.range(at: 1))
+                out.replaceSubrange(full, with: "/__x/\(h)")
+            }
+            s = out
+        }
+
         return Data(s.utf8)
     }
 
@@ -295,7 +338,10 @@ final class LocalProxy {
         if loc.hasPrefix("http://") || loc.hasPrefix("https://") {
             return rewriteAbsolute(loc)
         }
-        if loc.hasPrefix("/") { return loc }
-        return "/\(loc)"
+        if loc.hasPrefix("//") {
+            return rewriteAbsolute("https:" + loc)
+        }
+        if loc.hasPrefix("/") { return "/__x/\(host)\(loc)" }
+        return "/__x/\(host)/\(loc)"
     }
 }
