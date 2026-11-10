@@ -155,7 +155,26 @@ struct AirportView: View {
     }
 
     private func add() {
-        fetch(subURL.trimmingCharacters(in: .whitespacesAndNewlines), name: subName, replace: nil)
+        let t = subURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { msg = "先粘贴订阅或节点链接"; return }
+
+        // 直接粘单个节点链接（vmess:// vless:// trojan:// ss:// hysteria2:// tuic://）
+        let nodeSchemes = ["vmess://", "vless://", "trojan://", "ss://", "hysteria2://", "hy2://", "hysteria://", "tuic://", "socks://", "socks5://"]
+        if nodeSchemes.contains(where: { t.contains($0) }) && !t.hasPrefix("http") {
+            let ns = SubParser.parse(t)
+            if ns.isEmpty {
+                msg = "节点链接解析失败：格式不标准（多半是缺 vmess 的 base64 JSON 字段）"
+            } else {
+                nodes = ns + nodes
+                write(nodes, "subNodes")
+                subURL = ""
+                subName = ""
+                msg = "已添加 \(ns.count) 个节点"
+            }
+            return
+        }
+
+        fetch(t, name: subName, replace: nil)
     }
 
     private func refresh(_ s: SubEntry) {
@@ -163,31 +182,55 @@ struct AirportView: View {
     }
 
     private func fetch(_ urlText: String, name: String, replace: SubEntry?) {
-        guard let url = URL(string: urlText) else {
+        guard URL(string: urlText) != nil else {
             msg = "链接格式不对"
             return
         }
+        var alts = [urlText]
+        if urlText.hasPrefix("https://") {
+            alts.append("http://" + urlText.dropFirst(8))
+        }
         loading = true
         msg = ""
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 25
-        req.setValue("Clash/1.20.0", forHTTPHeaderField: "User-Agent")
-        req.setValue("clash", forHTTPHeaderField: "Accept")
+        attempt(alts, index: 0, name: name, replace: replace)
+    }
 
-        URLSession.shared.dataTask(with: req) { data, _, err in
+    private func attempt(_ alts: [String], index: Int, name: String, replace: SubEntry?) {
+        guard index < alts.count else {
+            loading = false
+            msg = "拉取失败：HTTPS / HTTP 都连不上，服务器挂了或需要代理环境"
+            return
+        }
+        guard let url = URL(string: alts[index]) else {
+            attempt(alts, index: index + 1, name: name, replace: replace)
+            return
+        }
+
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 20
+        req.setValue("Clash/1.20.0", forHTTPHeaderField: "User-Agent")
+        req.setValue("*/*", forHTTPHeaderField: "Accept")
+
+        TrustAllSession.shared.session.dataTask(with: req) { data, resp, err in
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             DispatchQueue.main.async {
+                if err != nil && index + 1 < alts.count {
+                    self.attempt(alts, index: index + 1, name: name, replace: replace)
+                    return
+                }
                 loading = false
                 if let err = err {
                     msg = "拉取失败：" + err.localizedDescription
                     return
                 }
                 guard let data = data, let text = String(data: data, encoding: .utf8) else {
-                    msg = "拉取失败：内容为空"
+                    msg = "拉取失败：返回为空（HTTP \(code)）"
                     return
                 }
                 let parsed = SubParser.parse(text)
                 guard !parsed.isEmpty else {
-                    msg = "解析出 0 个节点，可能订阅已改版或需要专属 UA"
+                    let head = text.replacingOccurrences(of: "\n", with: " ").prefix(80)
+                    msg = "服务器返回 \(data.count) 字节（HTTP \(code)），解析出 0 个节点。开头：" + head
                     return
                 }
                 nodes = parsed
@@ -195,8 +238,8 @@ struct AirportView: View {
                     subs[idx].count = parsed.count
                     subs[idx].updated = Date()
                 } else {
-                    let n = name.isEmpty ? (URL(string: urlText)?.host ?? "订阅") : name
-                    var e = SubEntry(name: n, url: urlText)
+                    let n = name.isEmpty ? (URL(string: alts[index])?.host ?? "订阅") : name
+                    var e = SubEntry(name: n, url: alts[index])
                     e.count = parsed.count
                     subs.insert(e, at: 0)
                 }
