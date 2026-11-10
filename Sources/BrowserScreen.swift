@@ -31,6 +31,10 @@ struct BrowserScreen: View {
                     .tint(.pink)
             }
 
+            if model.walled {
+                wallBanner
+            }
+
             WebContainer(webView: model.webView)
 
             bottomBar
@@ -70,6 +74,34 @@ struct BrowserScreen: View {
         )) { box in
             MagnetActionSheet(magnet: box.text)
         }
+    }
+
+    private var wallBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "shield.lefthalf.filled")
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("这个站有 Cloudflare 人机验证")
+                    .font(.footnote.weight(.semibold))
+                Text("内置代理过不了，改用系统代理打开")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("去打开") {
+                let raw = ProxyEngine.shared.realURL(from: model.walledURL.isEmpty ? model.address : model.walledURL)
+                if let u = URL(string: raw) {
+                    UIApplication.shared.open(u)
+                }
+            }
+            .font(.footnote.weight(.semibold))
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Color.orange.opacity(0.14))
     }
 
     private var bottomBar: some View {
