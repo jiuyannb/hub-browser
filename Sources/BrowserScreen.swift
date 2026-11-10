@@ -41,12 +41,23 @@ struct BrowserScreen: View {
             guard !appeared else { return }
             appeared = true
             model.onLoaded = { title, url in
-                store.record(Bookmark(title: title, url: url, site: site.name))
+                let real = ProxyEngine.shared.realURL(from: url)
+                store.record(Bookmark(title: title, url: real, site: site.name))
             }
             model.onMagnet = { m in
                 magnetText = m
             }
-            if let url = URL(string: site.url) {
+            if ProxyEngine.shared.isRunning {
+                ProxyEngine.shared.open(site: site) { entry in
+                    DispatchQueue.main.async {
+                        if let entry = entry {
+                            model.load(entry, site: site.name)
+                        } else if let url = URL(string: site.url) {
+                            model.load(url, site: site.name)
+                        }
+                    }
+                }
+            } else if let url = URL(string: site.url) {
                 model.load(url, site: site.name)
             }
         }
@@ -88,13 +99,13 @@ struct BrowserScreen: View {
 
             Button {
                 store.addBookmark(Bookmark(title: model.pageTitle.isEmpty ? model.address : model.pageTitle,
-                                           url: model.address,
+                                           url: ProxyEngine.shared.realURL(from: model.address),
                                            site: site.name))
             } label: {
                 Image(systemName: "bookmark").font(.system(size: 17, weight: .semibold))
             }
 
-            if let url = URL(string: model.address) {
+            if let url = URL(string: ProxyEngine.shared.realURL(from: model.address)) {
                 ShareLink(item: url) {
                     Image(systemName: "square.and.arrow.up").font(.system(size: 17, weight: .semibold))
                 }
