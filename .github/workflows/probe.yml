@@ -2,6 +2,8 @@ name: probe
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
 
 jobs:
   linux:
@@ -9,7 +11,12 @@ jobs:
     steps:
       - run: uname -a
 
-  mac:
+  mac14:
     runs-on: macos-14
+    steps:
+      - run: sw_vers
+
+  maclatest:
+    runs-on: macos-latest
     steps:
       - run: sw_vers
